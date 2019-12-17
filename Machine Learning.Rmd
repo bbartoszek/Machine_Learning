@@ -1,0 +1,214 @@
+---
+title: "Capstone"
+author: "Ben Bartoszek"
+date: "11/4/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+#Load the rstudio packages
+```{r}
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(reshape2)
+library(ggthemes)
+library("RColorBrewer")
+library(scales)
+library(wesanderson)
+library(car)
+library(texreg)
+```
+
+#Load the data and name each data frame
+```{r}
+Health_Deficiencies <- read.csv("HealthDeficiencies_Download.csv")
+Fire_Safety_Deficiencies <- read.csv("FireSafetyDeficiencies_Download.csv")
+Health_Providers <- read.csv("ProviderInfo_Download.csv")
+Health_Providers_18 <- read.csv("ProviderInfo_Download_2018.csv")
+Health_Providers_17 <- read.csv("ProviderInfo_Download_2017.csv")
+CMS_Regions <- read.csv("CMS_Regions.csv")
+Penalties <- read.csv("Penalties_Download.csv")
+```
+
+#Summarize the data frame
+```{r}
+summary(Health_Deficiencies)
+```
+
+
+#Combine the Fire Stafety Deficiencies data frame with the Health Deficiencies data frame
+```{r}
+Health_Deficiencies <- rbind(Health_Deficiencies, Fire_Safety_Deficiencies)
+```
+
+#Convert pnlty_date to a date format, extracts the year and creates a new column with the year in the Penalties data frame
+```{r}
+Penalties$pnlty_date <- as.Date(Penalties$pnlty_date, "%Y-%m-%d")
+Penalties$Year <- lubridate::year(Penalties$pnlty_date)
+```
+
+#Rename provnum to PROVNUM to match the other data frames
+```{r}
+Penalties <- Penalties %>% rename(PROVNUM = provnum)
+```
+
+#Create a new data frame, rename three of the columns to match other data frames and reshape PROVNUM and Year as characters
+```{r}
+Penalties_To_Join <- data.frame(Penalties$PROVNUM, Penalties$Year, Penalties$fine_amt)
+Penalties_To_Join <- rename(Penalties_To_Join, PROVNUM = Penalties.PROVNUM, Year = Penalties.Year, fine_amt = Penalties.fine_amt)
+Penalties_To_Join$PROVNUM <- as.character(Penalties_To_Join$PROVNUM)
+Penalties_To_Join$Year <- as.character(Penalties_To_Join$Year)
+```
+
+#Combine address columns to create a full street address
+```{r}
+Health_Deficiencies <- unite(Health_Deficiencies, "Full_Address", ADDRESS, CITY, STATE, ZIP, sep = ", ", remove = FALSE)
+Health_Providers <- unite(Health_Providers, "Full_Address", ADDRESS, CITY, STATE, ZIP, sep = ", ", remove = FALSE)
+Health_Providers_17 <- unite(Health_Providers_17, "Full_Address", ADDRESS, CITY, STATE, ZIP, sep = ", ", remove = FALSE)
+Health_Providers_18 <- unite(Health_Providers_18, "Full_Address", ADDRESS, CITY, STATE, ZIP, sep = ", ", remove = FALSE)
+```
+
+#Create data frames that includes the provider information for the past three years and rename the columns to match the other data frames
+```{r}
+Health_Providers_2017 <- data.frame(Health_Providers_17$provnum, Health_Providers_17$PROVNAME, Health_Providers_17$Full_Address, Year = "2017", Health_Providers_17$OWNERSHIP, Health_Providers_17$BEDCERT, Health_Providers_17$overall_rating, Health_Providers_17$quality_rating, Health_Providers_17$staffing_rating, Health_Providers_17$survey_rating, Health_Providers_17$STATE)
+Health_Providers_2017 <- rename(Health_Providers_2017, PROVNUM = Health_Providers_17.provnum, PROVNAME = Health_Providers_17.PROVNAME, Full_Address = Health_Providers_17.Full_Address, OWNERSHIP = Health_Providers_17.OWNERSHIP, BEDCERT = Health_Providers_17.BEDCERT, Overall_Rating = Health_Providers_17.overall_rating, Quality_Rating = Health_Providers_17.quality_rating, Staffing_Rating = Health_Providers_17.staffing_rating, Survey_Rating = Health_Providers_17.survey_rating, STATE = Health_Providers_17.STATE)
+Health_Providers_2018 <- data.frame(Health_Providers_18$PROVNUM, Health_Providers_18$PROVNAME, Health_Providers_18$Full_Address, Year = "2018", Health_Providers_18$OWNERSHIP, Health_Providers_18$BEDCERT, Health_Providers_18$OVERALL_RATING, Health_Providers_18$QUALITY_RATING, Health_Providers_18$STAFFING_RATING, Health_Providers_18$SURVEY_RATING, Health_Providers_18$STATE)
+Health_Providers_2018 <- rename(Health_Providers_2018, PROVNUM = Health_Providers_18.PROVNUM, PROVNAME = Health_Providers_18.PROVNAME, Full_Address = Health_Providers_18.Full_Address, OWNERSHIP = Health_Providers_18.OWNERSHIP, BEDCERT = Health_Providers_18.BEDCERT, Overall_Rating = Health_Providers_18.OVERALL_RATING, Quality_Rating = Health_Providers_18.QUALITY_RATING, Staffing_Rating = Health_Providers_18.STAFFING_RATING, Survey_Rating = Health_Providers_18.SURVEY_RATING, STATE = Health_Providers_18.STATE)
+Health_Providers_2019 <- data.frame(Health_Providers$PROVNUM, Health_Providers$PROVNAME, Health_Providers$Full_Address, Year = "2019", Health_Providers$OWNERSHIP, Health_Providers$BEDCERT, Health_Providers$Overall_Rating, Health_Providers$Quality_Rating, Health_Providers$Staffing_Rating, Health_Providers$SURVEY_RATING, Health_Providers$STATE)
+Health_Providers_2019 <- rename(Health_Providers_2019, PROVNUM = Health_Providers.PROVNUM, PROVNAME = Health_Providers.PROVNAME, Full_Address = Health_Providers.Full_Address, OWNERSHIP = Health_Providers.OWNERSHIP, BEDCERT = Health_Providers.BEDCERT, Overall_Rating = Health_Providers.Overall_Rating, Quality_Rating = Health_Providers.Quality_Rating, Staffing_Rating = Health_Providers.Staffing_Rating, Survey_Rating = Health_Providers.SURVEY_RATING, STATE = Health_Providers.STATE)
+```
+
+#Combine the three data frames containing provider information for the past three years
+```{r}
+Health_Providers_All <- rbind(Health_Providers_2019, Health_Providers_2018, Health_Providers_2017)
+```
+
+#Create a new column that identifies each deficiency as "Substandard Care" or "Not Substandard Care" based off of the scope of the deficiency
+```{r}
+Health_Deficiencies$Substandard_Care <- ifelse(Health_Deficiencies$SCOPE == "F"| Health_Deficiencies$SCOPE == "H" | Health_Deficiencies$SCOPE == "I" | Health_Deficiencies$SCOPE == "J" | Health_Deficiencies$SCOPE == "K" | Health_Deficiencies$SCOPE == "L", "Substandard Care", "Not Substandard Care")
+```
+
+#Join the CMS_Regions data frame with the Health_Providers_All data frame by state
+```{r}
+Health_Providers_All <- left_join(Health_Providers_All, CMS_Regions, by = "STATE")
+```
+
+#Create new column with a simplified ownership type for each provider to narrow down the ownership categories for the regression model
+```{r}
+Health_Providers_All$Own_Type <- ifelse(Health_Providers_All$OWNERSHIP == "For profit - Corporation"| Health_Providers_All$OWNERSHIP == "For profit - Individual" | Health_Providers_All$OWNERSHIP == "For profit - Limited Liability company" | Health_Providers_All$OWNERSHIP == "For profit - Partnership", "For Profit", ifelse(Health_Providers_All$OWNERSHIP == "Government - City"| Health_Providers_All$OWNERSHIP == "Government - City/county" | Health_Providers_All$OWNERSHIP == "Government - County" | Health_Providers_All$OWNERSHIP == "Government - Federal" | Health_Providers_All$OWNERSHIP == "Government - Hospital district" | Health_Providers_All$OWNERSHIP == "Government - State", "Government", ifelse(Health_Providers_All$OWNERSHIP == "Non profit - Church related"| Health_Providers_All$OWNERSHIP == "Non profit - Corporation" | Health_Providers_All$OWNERSHIP == "Non profit - Other", "Non Profit", "N/A")))
+```
+
+#Create new column in the Health_Deficiencies data frame with the year that the Deficiency was received based on the cycle
+```{r}
+Health_Deficiencies$Year <-  ifelse(Health_Deficiencies$cycle == "1", "2019", ifelse(Health_Deficiencies$cycle == "2", "2018", ifelse(Health_Deficiencies$cycle == "3", "2017", "N/A" )))
+```
+
+#Create a column in the Health_Deficiencies data frame with a 1 to count the number of deficiencies by provider
+```{r}
+Health_Deficiencies$Count <- "1"
+```
+
+#Create a new data frame with the count of the number of deficiencies for each PROVNUM and Year for each category of "Substandard Care" and "Not Substandard Care"
+```{r}
+HD_to_melt <- Health_Deficiencies %>% select(PROVNUM, Year, Substandard_Care, Count)
+HD_Melt <- melt(HD_to_melt, id.vars = c("PROVNUM", "Year", "Substandard_Care"), variable.name = "Count")
+HD_dcase <- dcast(HD_Melt, PROVNUM + Year ~ Substandard_Care, value.var = c("Count"))
+```
+
+#Join the HD_dcase data frame with the Health_Providers_All data frame by PROVNUM and Year
+```{r}
+All_Provider_Deficiencies <- left_join(Health_Providers_All, HD_dcase, by = c("PROVNUM", "Year"))
+```
+
+#Replace all N/As in Not Substandard Care and Substandard Care columns with 0
+```{r}
+All_Provider_Deficiencies$`Not Substandard Care`[is.na(All_Provider_Deficiencies$`Not Substandard Care`)] <- 0
+All_Provider_Deficiencies$`Substandard Care`[is.na(All_Provider_Deficiencies$`Substandard Care`)] <- 0
+```
+
+#Join the Penalties_To_Join data frame with the All_Provider_Deficiencies data frame by PROVNUM and Year and replace all N/As in fine_amt column with 0
+```{r}
+All_Provider_Deficiencies <- left_join(All_Provider_Deficiencies, Penalties_To_Join, by = c("PROVNUM", "Year"))
+All_Provider_Deficiencies$fine_amt[is.na(All_Provider_Deficiencies$fine_amt)] <- 0
+```
+
+#Create linear regression model with fine_amt as the intercept and sumarize the model
+```{r}
+Model1 <- lm(formula = All_Provider_Deficiencies$fine_amt ~ All_Provider_Deficiencies$Quality_Rating + All_Provider_Deficiencies$Staffing_Rating + All_Provider_Deficiencies$Overall_Rating + All_Provider_Deficiencies$'Not Substandard Care' + All_Provider_Deficiencies$'Substandard Care' + All_Provider_Deficiencies$BEDCERT, data = All_Provider_Deficiencies)
+summary(Model1)
+```
+
+#Create data frame with only rows that have either one or more Not Substandard Care deficiency or one or more Substandard Care deficiency
+```{r}
+DF_With_Defs <- All_Provider_Deficiencies[All_Provider_Deficiencies$`Not Substandard Care` > 0 | All_Provider_Deficiencies$`Substandard Care` > 0,]
+view(DF_With_Defs)
+```
+
+#Create data frame only with rows with a fine amount greater than zero
+```{r}
+DF_With_Fines <- DF_With_Defs[DF_With_Defs$fine_amt > 0,]
+View(DF_With_Fines)
+```
+
+#Create linear regression model using a logarithmic transformation on the intercept and sumarize the model
+```{r}
+Model2 <- lm(formula = log(DF_With_Fines$fine_amt) ~ Overall_Rating + `Not Substandard Care` + `Substandard Care` + BEDCERT + Year + OWNERSHIP + Quality_Rating + Staffing_Rating, data = DF_With_Fines)
+summary(Model2)
+```
+
+#Create linear regression model using a logarithmic transformation on the intercept and on the BEDCERT coefficient and sumarize the model
+```{r}
+Model3 <- lm(formula = log(DF_With_Fines$fine_amt) ~ `Not Substandard Care` + `Substandard Care` + log(BEDCERT) + Year + Own_Type + Overall_Rating + Region, data = DF_With_Fines)
+summary(Model3)
+```
+
+#Create diagnostic plots to analyze the linear regression model
+```{r}
+plot(Model3)
+```
+
+#Calculate the variance inflation factors for the linear regression model
+```{r}
+vif(Model3)
+```
+
+#Create a bar chart with fine_amt against Year and faceted on Region
+```{r}
+ggplot(data=subset(DF_With_Fines, !is.na(STATE)), aes(x = Year, y = fine_amt)) +
+  geom_col(aes(col = Year, fill = Year)) +
+  facet_wrap(. ~ Region, scales = "free_x") +
+  scale_y_continuous(labels = comma)
+```
+
+#Create a bar chart with average fine_amt against Year and faceted on Region
+```{r}
+ggplot(data=subset(DF_With_Fines, !is.na(STATE))) +
+  stat_summary(mapping = aes(x = Year, y = fine_amt, fill = Year), fun.y = "mean", geom = "bar", na.rm = TRUE, inherit.aes = FALSE) +
+  facet_wrap(. ~ Region, scales = "free_x") +
+  scale_y_continuous(labels = comma)
+```
+
+#Create a jittered plot graph with fine_amount against Substandard Care and faceted on Year with a smoothed conditional mean line
+```{r}
+ggplot(DF_With_Fines, aes(`Substandard Care`, fine_amt)) +
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  facet_wrap(. ~ Year) +
+  scale_y_continuous(labels = scales::comma)
+```
+
+#Create a jittered plot graph with fine_amount against BEDCERT and faceted on Year with a smoothed conditional mean line
+```{r}
+ggplot(DF_With_Fines, aes(BEDCERT, fine_amt)) +
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  facet_wrap(. ~ Year) +
+  scale_y_continuous(labels = scales::comma)
+```
+
